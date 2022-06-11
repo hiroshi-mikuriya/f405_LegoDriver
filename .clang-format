@@ -1,0 +1,14 @@
+# SortIncludes: false
+IndentWidth: 2
+UseTab: Never
+Standard: Auto
+AccessModifierOffset: -2
+BreakBeforeBraces: Allman # "{" の直前で改行する
+AllowShortIfStatementsOnASingleLine: false
+IndentCaseLabels: false
+ColumnLimit: 160
+
+AlwaysBreakTemplateDeclarations: Yes # "template<略>" の後で改行する
+AllowShortFunctionsOnASingleLine: Inline # クラス内で定義されたインライン関数及び空の関数のみ、改行なしの関数定義を許可する。
+AlignEscapedNewlines: Left # 多行マクロの行末バックスラッシュの前のスペースを少なめにする
+CommentPragmas: '[\*\!\/]' # コメントの冒頭が *、!、/ のいずれかの場合、そのコメントを整形しない(doxygen コメントを壊さないようにする)

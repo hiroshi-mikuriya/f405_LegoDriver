@@ -63,7 +63,7 @@ void mik::Application::update(msg::Message const *msg)
     break;
   case msg::ENCODER_DATA_NOTIFY:
   {
-    auto enc = *reinterpret_cast<msg::EncoderData const *>(msg->bytes);
+    auto enc = msg->get<msg::EncoderData>();
     for (uint32_t i = 0; i < MOTOR_COUNT; ++i)
     {
       auto &m = motor(i);
@@ -76,7 +76,7 @@ void mik::Application::update(msg::Message const *msg)
   }
   case msg::CURRENT_DATA_NOTIFY:
   {
-    auto c = *reinterpret_cast<msg::CurrentData const *>(msg->bytes);
+    auto c = msg->get<msg::CurrentData>();
     for (uint32_t i = 0; i < MOTOR_COUNT; ++i)
     {
       auto &m = motor(i);

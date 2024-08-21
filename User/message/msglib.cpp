@@ -5,7 +5,6 @@
 /// DO NOT USE THIS SOFTWARE WITHOUT THE SOFTWARE LICENSE AGREEMENT.
 
 #include "msglib.h"
-#include <cstring> // memcpy
 
 #ifndef MAX_MAIL_INFO_COUNT
 #define MAX_MAIL_INFO_COUNT 16 ///< 登録できる最大スレッド数

@@ -7,17 +7,24 @@
 !*.cpp
 !*.h
 !*.hpp
-!*.jpg
 !*.ioc
-!*.md
-!*.pdf
 !*.s
 !*_FLASH.ld
 !*.sh
-!*.xlsx
-!Doxyfile
-!CMakeLists.txt
-CMakeFiles
+
+# CubeMX files
 Middlewares
 Drivers
+Core
+
+# cmake files
+!CMakeLists.txt
+CMakeFiles
+
+# document files
+!Doxyfile
+!*.xlsx
 ~*.xlsx
+!*.jpg
+!*.md
+!*.pdf

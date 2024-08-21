@@ -7,6 +7,7 @@
 #pragma once
 
 #include "cmsis_os.h"
+#include <cstring> // to use 'memcpy'
 
 #ifndef MAX_MAIL_DATA_SIZE
 #define MAX_MAIL_DATA_SIZE 32 ///< 付随データの最大長
@@ -69,17 +70,25 @@ struct msg::Message
   ID type;                           ///< メッセージ種別
   uint16_t size;                     ///< 付随データサイズ
   uint8_t bytes[MAX_MAIL_DATA_SIZE]; ///< 付随データ
+
+  /// @brief 付随データを任意の型の変換して取得する
+  /// @tparam T  変換する型
+  /// @return 変換値
+  template <typename T>
+  T get() const
+  {
+    T t;
+    memcpy(&t, bytes, size);
+    return t;
+  }
 };
 
 /// @brief 受信結果型
 class msg::Result
 {
-  /// @brief デフォルトコンストラクタ削除
-  Result() = delete;
-  /// @brief コピーコンストラクタ削除
-  Result(Result const &) = delete;
-  /// @brief 代入演算子削除
-  Result &operator=(Result const &) = delete;
+  Result() = delete;                          ///< デフォルトコンストラクタ削除
+  Result(Result const &) = delete;            ///< コピーコンストラクタ削除
+  Result &operator=(Result const &) = delete; ///< 代入演算子削除
 
   osStatus status_; ///< 受信ステータス
   Message *msg_;    ///< メッセージ

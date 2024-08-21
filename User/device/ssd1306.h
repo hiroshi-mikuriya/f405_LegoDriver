@@ -1,24 +1,24 @@
 /// @file      device/ssd1306.h
 /// @author    Hiroshi Mikuriya
-/// @copyright Copyright© 2022 Hiroshi Mikuriya
+/// @copyright Copyright© 2024 Hiroshi Mikuriya
 ///
 /// DO NOT USE THIS SOFTWARE WITHOUT THE SOFTWARE LICENSE AGREEMENT.
 
 #pragma once
 
 #include "application.h"
-#include "common/alloc.hpp"
-#include "i2c_device_base.hpp"
+#include "peripheral/i2c.h"
 
 namespace mik
 {
 class SSD1306;
-constexpr uint8_t SSD1306_SLAVE_ADDR0 = 0x3C;
-constexpr uint8_t SSD1306_SLAVE_ADDR1 = 0x3D;
+constexpr uint8_t SSD1306_SLAVE_ADDR0 = 0x3C << 1; // 0x78
+constexpr uint8_t SSD1306_SLAVE_ADDR1 = 0x3D << 1; // 0x7A
 } // namespace mik
 
-/// @brief SSD1306制御クラス（OLED）
-class mik::SSD1306 : public mik::I2CDeviceBase
+/// @brief SSD1306(0.96インチOLED)制御クラス
+/// @see https://monoedge.net/raspi-ssd1306/
+class mik::SSD1306
 {
   SSD1306() = delete;                           ///< デフォルトコンストラクタ削除
   SSD1306(SSD1306 const &) = delete;            ///< コピーコンストラクタ削除
@@ -26,25 +26,13 @@ class mik::SSD1306 : public mik::I2CDeviceBase
   SSD1306(SSD1306 &&) = delete;                 ///< moveコンストラクタ削除
   SSD1306 &operator=(SSD1306 &&) = delete;      ///< move演算子削除
 
-public:
-  static constexpr uint8_t WIDTH = 128;                    ///< 横ピクセル数
-  static constexpr uint8_t HEIGHT = 64;                    ///< 縦ピクセル数
-  static constexpr uint8_t PAGE = 8;                       ///< ページ数
-  static constexpr uint32_t BUF_SIZE = WIDTH * HEIGHT / 8; ///< 画面の全ピクセルデータをバッファするのに必要なサイズ
+  I2C *i2c_;          ///< I2C通信クラス
+  uint8_t slaveAddr_; ///< スレーブアドレス
+  uint8_t *buffer_;   ///< 表示用バッファ
 
-private:
-  /// 表示用バッファ
-  uint8_t buffer_[BUF_SIZE + 1];
-  /// 通信可否
-  const bool ok_;
-  /// @brief LCD初期化
-  /// @retval true 通信成功
-  /// @retval false 通信失敗
-  bool init() const noexcept;
   /// @brief 全ページ分のバッファをOLEDに書き込む
-  /// @retval true 通信成功
-  /// @retval false 通信失敗
-  bool sendBufferToDevice() noexcept;
+  /// @return I2C通信結果
+  I2C::Result sendBufferToDevice();
   /// @brief 画面表示を更新する
   /// @param [in] motor モータ
   /// @param [in] i モータID
@@ -54,14 +42,24 @@ public:
   /// @brief コンストラクタ
   /// @param [in] i2c I2C通信オブジェクト
   /// @param [in] slaveAddr スレーブアドレス
-  explicit SSD1306(I2C *i2c, uint8_t slaveAddr) noexcept;
+  explicit SSD1306(I2C *i2c, uint8_t slaveAddr);
   /// @brief デストラクタ
-  virtual ~SSD1306() {}
-  /// @brief 初期化成功・失敗を取得する
-  /// @retval true 成功
-  /// @retval false 失敗
-  explicit operator bool() const noexcept override { return ok_; };
+  virtual ~SSD1306();
+  /// @brief LCD初期化
+  /// @return I2C通信結果
+  I2C::Result init();
+  /// @brief 画面を黒くする
+  /// @return I2C通信結果
+  I2C::Result black();
+  /// @brief 画面を白くする
+  /// @return I2C通信結果
+  I2C::Result white();
+  /// @brief 文字列を表示する
+  /// @param [in] txt 表示する文字列
+  /// @return I2C通信結果
+  I2C::Result showText(const char *txt);
   /// @brief 画面表示を更新する
   /// @param [in] app アプリケーション
-  void update(Application const *app);
+  /// @return I2C通信結果
+  I2C::Result update(Application const *app);
 };

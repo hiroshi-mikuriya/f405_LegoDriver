@@ -1,18 +1,18 @@
 /// @file      peripheral/i2c.h
 /// @author    Hiroshi Mikuriya
-/// @copyright Copyright© 2022 Hiroshi Mikuriya
+/// @copyright Copyright© 2024 Hiroshi Mikuriya
 ///
 /// DO NOT USE THIS SOFTWARE WITHOUT THE SOFTWARE LICENSE AGREEMENT.
 
 #pragma once
 
-#include "common/mutex.hpp"
+#include "cmsis_os.h"
 #include "main.h"
 
 namespace mik
 {
 class I2C;
-}
+} // namespace mik
 
 /// @brief I2C通信クラス
 class mik::I2C
@@ -30,33 +30,47 @@ public:
   };
 
 private:
-  /// @brief デフォルトコンストラクタ削除
-  I2C() = delete;
-  /// @brief コピーコンストラクタ削除
-  I2C(I2C const &) = delete;
-  /// @brief 代入演算子削除
-  I2C &operator=(I2C const &) = delete;
-  /// @brief moveコンストラクタ削除
-  I2C(I2C &&) = delete;
-  /// @brief move演算子削除
-  I2C &operator=(I2C &&) = delete;
+  I2C() = delete;                       ///< デフォルトコンストラクタ削除
+  I2C(I2C const &) = delete;            ///< コピーコンストラクタ削除
+  I2C &operator=(I2C const &) = delete; ///< 代入演算子削除
+  I2C(I2C &&) = delete;                 ///< moveコンストラクタ削除
+  I2C &operator=(I2C &&) = delete;      ///< move演算子削除
 
   I2C_TypeDef *i2cx_;           ///< I2Cペリフェラル
   mutable osThreadId threadId_; ///< I2C通信を実施するスレッドのID
   DMA_TypeDef *dma_;            ///< 送受信DMA
-  uint32_t rxStream_;           ///< 受信DMAストリーム
   uint32_t txStream_;           ///< 送信DMAストリーム
   uint8_t slaveAddr_;           ///< 通信対象デバイスのスレーブアドレス
-  Mutex mutex_;                 ///< 通信中にロックするミューテックス
+
+  enum Mode
+  {
+    TX_DMA = 0, ///< 送信モード（DMA使用）
+    TX,         ///< 送信モード（DMA未使用）
+    RX_TX,      ///< 受信前の送信モード（DMA未使用）
+    RX          ///< 受信モード（DMA未使用）
+  };
+
+  volatile struct
+  {
+    Mode mode;           ///< 通信モードの指定
+    uint8_t const *tbuf; ///< 次の送信データを指すポインタ
+    uint16_t tsize;      ///< 残りの送信サイズ
+    uint8_t *rbuf;       ///< 次の受信データの格納先
+    uint16_t rsize;      ///< 残りの受信サイズ
+  } inter_;              ///< 割り込み内部で使用する変数群
+
+  /// @brief 関連する割り込みを全て禁止にする
+  void disableInterrupts();
 
 public:
-  /// @brief コンストラクタ
+  /// @brief コンストラクタ（DMA使用）
   /// @param [in] i2cx I2Cペリフェラル
-  /// @param [in] threadId イベント通知先のスレッドID
   /// @param [in] dma 送受信DMA
-  /// @param [in] rxStream 受信DMAストリーム
   /// @param [in] txStream 送信DMAストリーム
-  explicit I2C(I2C_TypeDef *const i2cx, DMA_TypeDef *const dma, uint32_t rxStream, uint32_t txStream) noexcept;
+  explicit I2C(I2C_TypeDef *const i2cx, DMA_TypeDef *const dma, uint32_t txStream);
+  /// @brief コンストラクタ（DMA未使用）
+  /// @param [in] i2cx I2Cペリフェラル
+  explicit I2C(I2C_TypeDef *const i2cx);
   /// @brief デストラクタ
   virtual ~I2C();
   /// @brief イベント割り込みが発生したら呼び出す関数
@@ -64,17 +78,13 @@ public:
   ///      Start Bit
   /// @par ADDR
   ///      Address sent, Address matched
-  /// @par ADD10
-  ///      10-bit header sent
-  /// @par STOP
-  ///      Stop detection
   /// @par BTF
   ///      Byte transfer finished
   /// @par RXNE
   ///      Receive buffer not empty
   /// @par TXE
   ///      Transmit buffer empty
-  void notifyEvIRQ() noexcept;
+  void notifyEvIRQ();
   /// @brief エラー割り込みが発生したら呼び出す関数
   /// @par BERR
   ///      Bus Error detection
@@ -90,33 +100,37 @@ public:
   ///      SMBus PEC error detection
   /// @par SMBALERT
   ///      SMBus Alert pin event detection
-  void notifyErIRQ() noexcept;
-  /// @brief 受信完了割り込みが発生したら呼び出す関数
-  void notifyRxEndIRQ() noexcept;
-  /// @brief 受信エラー割り込みが発生したら呼び出す関数
-  void notifyRxErrorIRQ() noexcept;
+  void notifyErIRQ();
   /// @brief 送信完了割り込みが発生したら呼び出す関数
-  void notifyTxEndIRQ() noexcept;
+  void notifyTxEndIRQ();
   /// @brief 送信エラー割り込みが発生したら呼び出す関数
-  void notifyTxErrorIRQ() noexcept;
-  /// @brief データを書き込む
+  void notifyTxErrorIRQ();
+  /// @brief データを書き込む（DMA使用する）
   /// @param [in] slaveAddr スレーブアドレス
   /// @param [in] bytes 書き込みデータの先頭ポインタ
   /// @param [in] size 書き込むバイト数
-  /// @param [in] waitReady I2CがReadyになるまで待機する
   /// @retval OK      成功
   /// @retval BUSY    ビジー
   /// @retval TIMEOUT タイムアウト
   /// @retval ERROR   エラー
-  Result write(uint8_t slaveAddr, void const *bytes, uint32_t size, bool waitReady = true) noexcept;
-  /// @brief データを読み込む
+  Result writeWithDma(uint8_t slaveAddr, void const *bytes, uint16_t size);
+  /// @brief データを書き込む（DMA使用しない）
   /// @param [in] slaveAddr スレーブアドレス
+  /// @param [in] bytes 書き込みデータの先頭ポインタ
+  /// @param [in] size 書き込むバイト数
+  /// @retval OK      成功
+  /// @retval BUSY    ビジー
+  /// @retval TIMEOUT タイムアウト
+  /// @retval ERROR   エラー
+  Result write(uint8_t slaveAddr, void const *bytes, uint16_t size);
+  /// @brief レジスタを指定してからデータを読み込む（DMA使用しない）
+  /// @param [in] slaveAddr スレーブアドレス
+  /// @param [in] reg レジスタ番号
   /// @param [in] buffer 読み込んだデータを格納するバッファ
   /// @param [in] size 読み込むバイト数
-  /// @param [in] waitReady I2CがReadyになるまで待機する
   /// @retval OK      成功
   /// @retval BUSY    ビジー
   /// @retval TIMEOUT タイムアウト
   /// @retval ERROR   エラー
-  Result read(uint8_t slaveAddr, void *buffer, uint32_t size, bool waitReady = true) noexcept;
+  Result readReg(uint8_t slaveAddr, uint8_t reg, void *buffer, uint16_t size);
 };

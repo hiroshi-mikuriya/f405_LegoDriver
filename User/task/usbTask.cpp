@@ -6,6 +6,7 @@
 
 #include "main.h"
 #include "message/msgdef.h"
+#include "resource.h"
 #include "usb_device.h"
 #include "usbd_cdc_if.h"
 

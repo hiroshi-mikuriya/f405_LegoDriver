@@ -97,6 +97,8 @@ file(GLOB SRCS
 	${CORE}/Src/stm32f4xx_hal_msp.c
 	${CORE}/Src/stm32f4xx_hal_timebase_tim.c
 	${CORE}/Src/system_stm32f4xx.c
+	${CORE}/Src/syscalls.c
+	${CORE}/Src/system.c
 	${ROOT}/startup_stm32f405xx.s
 	${DRIVER}/Src/stm32f4xx_ll_gpio.c
 	${DRIVER}/Src/stm32f4xx_hal_pcd.c

@@ -8,6 +8,7 @@
 #include "common/alloc.hpp"
 #include "main.h"
 #include "message/msgdef.h"
+#include "resource.h"
 
 extern "C"
 {

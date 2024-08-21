@@ -6,6 +6,7 @@
 
 #include "main.h"
 #include "message/msgdef.h"
+#include "resource.h"
 
 namespace
 {

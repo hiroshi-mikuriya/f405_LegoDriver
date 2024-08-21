@@ -7,6 +7,7 @@
 #include "encoder.h"
 #include "main.h"
 #include "message/msgdef.h"
+#include "task/resource.h"
 #include <initializer_list>
 
 namespace

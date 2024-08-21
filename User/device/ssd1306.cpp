@@ -1,43 +1,54 @@
 /// @file      device/ssd1306.cpp
 /// @author    Hiroshi Mikuriya
-/// @copyright Copyright© 2022 Hiroshi Mikuriya
+/// @copyright Copyright© 2024 Hiroshi Mikuriya
 ///
 /// DO NOT USE THIS SOFTWARE WITHOUT THE SOFTWARE LICENSE AGREEMENT.
 
 #include "ssd1306.h"
 #include "constants.h"
 #include "fonts.h"
+#include <cmsis_os.h>
+#include <cstdio>  // to use 'memset'
 #include <cstring> // to use 'memcpy' 'memset'
 
-using mik::SSD1306;
+using namespace mik;
 
 namespace
 {
-constexpr uint8_t CONFIG_MUX_RATIO_CMD = 0xA8;
-constexpr uint8_t CONFIG_MUX_RATIO_A = 0x3F;
-constexpr uint8_t CONFIG_DISPLAY_OFFSET_CMD = 0xD3;
-constexpr uint8_t CONFIG_DISPLAY_OFFSET_A = 0x0;
-constexpr uint8_t CONFIG_DISPLAY_START_LINE = 0x40;
-constexpr uint8_t CONFIG_SEGMENT_REMAP = 0xA1;
-constexpr uint8_t CONFIG_COM_OUT_DIRECTION = 0xC8;
-constexpr uint8_t CONFIG_COM_PIN_CONFIG_CMD = 0xDA;
-constexpr uint8_t CONFIG_COM_PIN_CONFIG_A = 0x12;
-constexpr uint8_t CONFIG_CONTRAST_CMD = 0x81;
-constexpr uint8_t CONFIG_CONTRAST_A = 0x7F;
-constexpr uint8_t CONFIG_ENTIRE_DISPLAY_ON = 0xA4;
-constexpr uint8_t CONFIG_DISPLAY_PIX_MODE = 0xA6;
-constexpr uint8_t CONFIG_DISPLAY_FREQ_CMD = 0xD5;
-constexpr uint8_t CONFIG_DISPLAY_FREQ_A = 0xF0;
-constexpr uint8_t CONFIG_ADDRESSING_MODE_CMD = 0x20;
-constexpr uint8_t CONFIG_ADDRESSING_MODE_A = 0x0;
-constexpr uint8_t CONFIG_CHARGE_PUMP_CMD = 0x8D;
-constexpr uint8_t CONFIG_CHARGE_PUMP_A = 0x14;
-constexpr uint8_t CONFIG_DISPLAY_ON_OFF = 0xAF;
+constexpr uint8_t WIDTH = 128;                  ///< 横ピクセル数
+constexpr uint8_t NUM_PAGE = 8;                 ///< ページ数
+constexpr uint8_t HEIGHT = NUM_PAGE * 8;        ///< 縦ピクセル数
+constexpr uint32_t BUF_SIZE = WIDTH * NUM_PAGE; ///< 画面の全ピクセルデータをバッファするのに必要なサイズ
 
-constexpr uint8_t CTRL_BYTE_CMD_SINGLE = 0b00000000; // 1つのコマンドセットのみ
-constexpr uint8_t CTRL_BYTE_CMD_STREAM = 0b10000000; // コマンドの後ろに続けて複数のコントロールバイト＆コマンドor描画データを場合
-constexpr uint8_t CTRL_BYTE_DATA_SINGLE = 0b01000000; // 描画データのWriteのみ
-constexpr uint8_t CTRL_BYTE_DATA_STREAM = 0b11000000; // 描画データの後ろに続けて複数のコントロールバイト＆コマンドor描画データを場合
+constexpr uint8_t SSD1306_CONFIG_MUX_RATIO_CMD = 0xA8;
+constexpr uint8_t SSD1306_CONFIG_MUX_RATIO_A = 0x3F;
+constexpr uint8_t SSD1306_CONFIG_DISPLAY_OFFSET_CMD = 0xD3;
+constexpr uint8_t SSD1306_CONFIG_DISPLAY_OFFSET_A = 0x0;
+constexpr uint8_t SSD1306_CONFIG_DISPLAY_START_LINE = 0x40;
+constexpr uint8_t SSD1306_CONFIG_SEGMENT_REMAP = 0xA1;
+constexpr uint8_t SSD1306_CONFIG_COM_OUT_DIRECTION = 0xC8;
+constexpr uint8_t SSD1306_CONFIG_COM_PIN_CONFIG_CMD = 0xDA;
+constexpr uint8_t SSD1306_CONFIG_COM_PIN_CONFIG_A = 0x12;
+constexpr uint8_t SSD1306_CONFIG_CONTRAST_CMD = 0x81;
+constexpr uint8_t SSD1306_CONFIG_CONTRAST_A = 0x7F;
+constexpr uint8_t SSD1306_CONFIG_ENTIRE_DISPLAY_ON = 0xA4;
+constexpr uint8_t SSD1306_CONFIG_DISPLAY_PIX_MODE = 0xA6;
+constexpr uint8_t SSD1306_CONFIG_DISPLAY_FREQ_CMD = 0xD5;
+constexpr uint8_t SSD1306_CONFIG_DISPLAY_FREQ_A = 0xF0;
+constexpr uint8_t SSD1306_CONFIG_ADDRESSING_MODE_CMD = 0x20;
+constexpr uint8_t SSD1306_CONFIG_ADDRESSING_MODE_A = 0x0;
+constexpr uint8_t SSD1306_CONFIG_CHARGE_PUMP_CMD = 0x8D;
+constexpr uint8_t SSD1306_CONFIG_CHARGE_PUMP_A = 0x14;
+constexpr uint8_t SSD1306_CONFIG_DISPLAY_ON_OFF = 0xAF;
+
+///< 1つのコマンドセットのみ
+constexpr uint8_t SSD1306_CTRL_BYTE_CMD_SINGLE = 0b00000000;
+///< コマンドの後ろに続けて複数のコントロールバイト＆コマンドor描画データを場合
+constexpr uint8_t SSD1306_CTRL_BYTE_CMD_STREAM = 0b10000000;
+///< 描画データのWriteのみ
+constexpr uint8_t SSD1306_CTRL_BYTE_DATA_SINGLE = 0b01000000;
+///< 描画データの後ろに続けて複数のコントロールバイト＆コマンドor描画データを場合
+constexpr uint8_t SSD1306_CTRL_BYTE_DATA_STREAM = 0b11000000;
 
 /// @brief １ピクセル書き込む
 /// @param [in] color 色
@@ -46,15 +57,15 @@ constexpr uint8_t CTRL_BYTE_DATA_STREAM = 0b11000000; // 描画データの後�
 /// @param [out] dst 書き込み先
 inline void drawPixel(uint8_t color, uint8_t x, uint8_t y, uint8_t *dst) noexcept
 {
-  if (x < SSD1306::WIDTH && y < SSD1306::HEIGHT)
+  if (x < WIDTH && y < HEIGHT)
   {
     if (color)
     {
-      dst[x + (y / 8) * SSD1306::WIDTH] |= 1 << (y % 8);
+      dst[x + (y / 8) * WIDTH] |= 1 << (y % 8);
     }
     else
     {
-      dst[x + (y / 8) * SSD1306::WIDTH] &= ~(1 << (y % 8));
+      dst[x + (y / 8) * WIDTH] &= ~(1 << (y % 8));
     }
   }
 }
@@ -65,22 +76,23 @@ inline void drawPixel(uint8_t color, uint8_t x, uint8_t y, uint8_t *dst) noexcep
 /// @param [in] x X位置
 /// @param [in] y Y位置
 /// @param [out] dst 書き込み先
-inline void drawChar(char ch, mik::FontDef const &font, bool invert, uint8_t x, uint8_t y, uint8_t *dst) noexcept
+inline void drawChar(char ch, mik::FontDef const &font, bool invert, uint8_t x, uint8_t y, uint8_t *dst)
 {
   for (uint8_t dy = 0; dy < font.height; ++dy)
   {
     uint16_t b = font.data[(ch - 32) * font.height + dy];
     for (uint8_t dx = 0; dx < font.width; ++dx)
     {
-      uint8_t color = (b << dx) & 0x8000 ? 1 : 0;
+      bool on = (static_cast<uint16_t>(0) != ((0x8000 >> dx) & b)) ? true : false;
       if (invert)
       {
-        color = !color;
+        on = !on;
       }
-      drawPixel(color, x + dx, y + dy, dst);
+      drawPixel(on, x + dx, y + dy, dst);
     }
   }
 }
+
 /// @brief 文字列を書き込む
 /// @param [in] str 文字列
 /// @param [in] font フォントデータ
@@ -88,7 +100,7 @@ inline void drawChar(char ch, mik::FontDef const &font, bool invert, uint8_t x, 
 /// @param [in] x X位置
 /// @param [in] y Y位置
 /// @param [out] dst 書き込み先
-inline void drawString(char const *str, mik::FontDef const &font, bool invert, uint8_t x, uint8_t y, uint8_t *dst) noexcept
+inline void drawString(char const *str, mik::FontDef const &font, bool invert, uint8_t x, uint8_t y, uint8_t *dst)
 {
   for (char const *p = str; *p; ++p)
   {
@@ -99,7 +111,7 @@ inline void drawString(char const *str, mik::FontDef const &font, bool invert, u
 /// @brief モータ制御モード文字列を取得する
 /// @param [in] m モータ制御モード
 /// @return モータ制御モード文字列
-char const *const modeText(mik::MotorMode m)
+inline char const *const modeText(mik::MotorMode m)
 {
   switch (m)
   {
@@ -113,7 +125,7 @@ char const *const modeText(mik::MotorMode m)
 }
 } // namespace
 
-bool SSD1306::init() const noexcept
+I2C::Result SSD1306::init()
 {
   // see. https://monoedge.net/raspi-ssd1306/
   // 1	Set MUX Ratio	使用する行数。
@@ -145,39 +157,59 @@ bool SSD1306::init() const noexcept
   // 0xAFで画面ONです	0xAF
 
   constexpr uint8_t v[] = {
-      CTRL_BYTE_CMD_SINGLE,       //
-      CONFIG_MUX_RATIO_CMD,       //
-      CONFIG_MUX_RATIO_A,         //
-      CONFIG_DISPLAY_OFFSET_CMD,  //
-      CONFIG_DISPLAY_OFFSET_A,    //
-      CONFIG_DISPLAY_START_LINE,  //
-      CONFIG_SEGMENT_REMAP,       //
-      CONFIG_COM_OUT_DIRECTION,   //
-      CONFIG_COM_PIN_CONFIG_CMD,  //
-      CONFIG_COM_PIN_CONFIG_A,    //
-      CONFIG_CONTRAST_CMD,        //
-      CONFIG_CONTRAST_A,          //
-      CONFIG_ENTIRE_DISPLAY_ON,   //
-      CONFIG_DISPLAY_PIX_MODE,    //
-      CONFIG_DISPLAY_FREQ_CMD,    //
-      CONFIG_DISPLAY_FREQ_A,      //
-      CONFIG_ADDRESSING_MODE_CMD, //
-      CONFIG_ADDRESSING_MODE_A,   //
-      CONFIG_CHARGE_PUMP_CMD,     //
-      CONFIG_CHARGE_PUMP_A,       //
-      CONFIG_DISPLAY_ON_OFF,      //
+      SSD1306_CTRL_BYTE_CMD_SINGLE,       //
+      SSD1306_CONFIG_MUX_RATIO_CMD,       //
+      SSD1306_CONFIG_MUX_RATIO_A,         //
+      SSD1306_CONFIG_DISPLAY_OFFSET_CMD,  //
+      SSD1306_CONFIG_DISPLAY_OFFSET_A,    //
+      SSD1306_CONFIG_DISPLAY_START_LINE,  //
+      SSD1306_CONFIG_SEGMENT_REMAP,       //
+      SSD1306_CONFIG_COM_OUT_DIRECTION,   //
+      SSD1306_CONFIG_COM_PIN_CONFIG_CMD,  //
+      SSD1306_CONFIG_COM_PIN_CONFIG_A,    //
+      SSD1306_CONFIG_CONTRAST_CMD,        //
+      SSD1306_CONFIG_CONTRAST_A,          //
+      SSD1306_CONFIG_ENTIRE_DISPLAY_ON,   //
+      SSD1306_CONFIG_DISPLAY_PIX_MODE,    //
+      SSD1306_CONFIG_DISPLAY_FREQ_CMD,    //
+      SSD1306_CONFIG_DISPLAY_FREQ_A,      //
+      SSD1306_CONFIG_ADDRESSING_MODE_CMD, //
+      SSD1306_CONFIG_ADDRESSING_MODE_A,   //
+      SSD1306_CONFIG_CHARGE_PUMP_CMD,     //
+      SSD1306_CONFIG_CHARGE_PUMP_A,       //
+      SSD1306_CONFIG_DISPLAY_ON_OFF,      //
   };
-  return write(v, sizeof(v));
+  return i2c_->writeWithDma(slaveAddr_, v, sizeof(v));
 }
 
-bool SSD1306::sendBufferToDevice() noexcept
+I2C::Result SSD1306::sendBufferToDevice()
 {
-  if (ok_)
+  I2C::Result res = I2C::OK;
+  for (uint8_t page = 0; page < NUM_PAGE; ++page)
   {
-    buffer_[0] = CTRL_BYTE_DATA_SINGLE;
-    write(buffer_, sizeof(buffer_));
+    uint8_t v0[] = {
+        SSD1306_CTRL_BYTE_CMD_STREAM, //
+        (uint8_t)(0xB0 + page),       // set page start address
+        SSD1306_CTRL_BYTE_CMD_SINGLE, //
+        0x21,                         // set column address
+        0,                            // column start address(0-127)
+        WIDTH - 1,                    // column stop address(0-127)
+    };
+    res = i2c_->writeWithDma(slaveAddr_, v0, sizeof(v0));
+    if (res != I2C::OK)
+    {
+      return res;
+    }
+    uint8_t v1[WIDTH + 1] = {0};
+    v1[0] = SSD1306_CTRL_BYTE_DATA_SINGLE;
+    memcpy(v1 + 1, buffer_ + page * WIDTH, WIDTH);
+    res = i2c_->writeWithDma(slaveAddr_, v1, sizeof(v1));
+    if (res != I2C::OK)
+    {
+      return res;
+    }
   }
-  return ok_;
+  return res;
 }
 
 void SSD1306::writeBuffer(Motor const &motor, uint32_t i)
@@ -192,15 +224,41 @@ void SSD1306::writeBuffer(Motor const &motor, uint32_t i)
   drawString(c, Font_7x10, false, 0, y + 22, buf);
 }
 
-SSD1306::SSD1306(I2C *i2c, uint8_t slaveAddr) noexcept //
-    : I2CDeviceBase(i2c, slaveAddr),                   //
-      ok_(init())                                      //
+SSD1306::SSD1306(I2C *i2c, uint8_t slaveAddr)                 //
+    : i2c_(i2c),                                              //
+      slaveAddr_(slaveAddr),                                  //
+      buffer_(static_cast<uint8_t *>(pvPortMalloc(BUF_SIZE))) //
 {
-  update(0);
+  memset(buffer_, 0, BUF_SIZE);
 }
-void SSD1306::update(Application const *app)
+
+SSD1306::~SSD1306()
 {
-  memset(buffer_, 0, sizeof(buffer_));
+  vPortFree(buffer_);
+}
+
+I2C::Result SSD1306::black()
+{
+  memset(buffer_, 0, BUF_SIZE);
+  return sendBufferToDevice();
+}
+
+I2C::Result SSD1306::white()
+{
+  memset(buffer_, 0xFF, BUF_SIZE);
+  return sendBufferToDevice();
+}
+
+I2C::Result SSD1306::showText(const char *txt)
+{
+  memset(buffer_, 0, BUF_SIZE);
+  drawString(txt, Font_11x18, false, 0, 0, buffer_);
+  return sendBufferToDevice();
+}
+
+I2C::Result SSD1306::update(Application const *app)
+{
+  memset(buffer_, 0, BUF_SIZE);
   if (app)
   {
     for (uint32_t i = 0; i < MOTOR_COUNT; ++i)
@@ -208,5 +266,5 @@ void SSD1306::update(Application const *app)
       writeBuffer(app->motor(i), i);
     }
   }
-  sendBufferToDevice();
+  return sendBufferToDevice();
 }

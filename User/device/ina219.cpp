@@ -9,6 +9,8 @@
 #include "ina219.h"
 #include "common/big_endian.hpp"
 
+using namespace mik;
+
 namespace
 {
 constexpr uint8_t REG_CONFIG = 0x00;            ///< コンフィグ
@@ -76,27 +78,27 @@ enum
 };
 } // namespace
 
-bool mik::INA219::updateCalibration() const
+I2C::Result INA219::updateCalibration()
 {
   return writeReg(REG_CARIBRATION, calValue_);
 }
 
-bool mik::INA219::writeReg(uint8_t reg, uint16_t v) const
+I2C::Result INA219::writeReg(uint8_t reg, uint16_t v)
 {
   uint8_t d[3] = {reg};
   BE<uint16_t>::set(d + 1, v);
-  return write(d, sizeof(d));
+  return i2c_->write(slaveAddr_, d, sizeof(d));
 }
 
-bool mik::INA219::readReg(uint8_t reg, uint16_t &v) const
+I2C::Result INA219::readReg(uint8_t reg, uint16_t &v)
 {
   uint8_t a[2] = {0};
-  bool res = read(reg, a, sizeof(a));
+  I2C::Result res = i2c_->readReg(slaveAddr_, reg, a, sizeof(a));
   v = BE<uint16_t>::get(a);
   return res;
 }
 
-bool mik::INA219::setCalibration_32V_2A()
+I2C::Result INA219::setCalibration_32V_2A()
 {
   calValue_ = 4096;
   currentDivider_mA_ = 10; // Current LSB = 100uA per bit (1000/100 = 10)
@@ -107,9 +109,15 @@ bool mik::INA219::setCalibration_32V_2A()
                               CONFIG_BADCRES_12BIT |          //
                               CONFIG_SADCRES_12BIT_1S_532US | //
                               CONFIG_MODE_SANDBVOLT_CONTINUOUS;
-  return updateCalibration() && writeReg(REG_CONFIG, config);
+  I2C::Result res = updateCalibration();
+  if (res != I2C::OK)
+  {
+    return res;
+  }
+  return writeReg(REG_CONFIG, config);
 }
-bool mik::INA219::setCalibration_32V_1A()
+
+I2C::Result INA219::setCalibration_32V_1A()
 {
   calValue_ = 10240;
   currentDivider_mA_ = 25;    // Current LSB = 40uA per bit (1000/40 = 25)
@@ -120,9 +128,15 @@ bool mik::INA219::setCalibration_32V_1A()
                               CONFIG_BADCRES_12BIT |          //
                               CONFIG_SADCRES_12BIT_1S_532US | //
                               CONFIG_MODE_SANDBVOLT_CONTINUOUS;
-  return updateCalibration() && writeReg(REG_CONFIG, config);
+  I2C::Result res = updateCalibration();
+  if (res != I2C::OK)
+  {
+    return res;
+  }
+  return writeReg(REG_CONFIG, config);
 }
-bool mik::INA219::setCalibration_16V_400mA()
+
+I2C::Result INA219::setCalibration_16V_400mA()
 {
   calValue_ = 8192;
   currentDivider_mA_ = 20;    // Current LSB = 50uA per bit (1000/50 = 20)
@@ -133,34 +147,54 @@ bool mik::INA219::setCalibration_16V_400mA()
                               CONFIG_BADCRES_12BIT |          //
                               CONFIG_SADCRES_12BIT_1S_532US | //
                               CONFIG_MODE_SANDBVOLT_CONTINUOUS;
-  return updateCalibration() && writeReg(REG_CONFIG, config);
+  I2C::Result res = updateCalibration();
+  if (res != I2C::OK)
+  {
+    return res;
+  }
+  return writeReg(REG_CONFIG, config);
 }
 
-mik::INA219::INA219(I2C *i2c, uint8_t slaveAddr) //
-    : I2CDeviceBase(i2c, slaveAddr),             //
-      calValue_(0),                              //
-      currentDivider_mA_(0),                     //
-      powerMultiplier_mW_(0),                    //
-      ok_(setCalibration_32V_2A())               //
+INA219::INA219(I2C *i2c, uint8_t slaveAddr) //
+    : i2c_(i2c),                            //
+      slaveAddr_(slaveAddr),                //
+      calValue_(0),                         //
+      currentDivider_mA_(0),                //
+      powerMultiplier_mW_(0)                //
 {
 }
-float mik::INA219::getShuntCurrent() const
+
+INA219::~INA219() {}
+
+I2C::Result INA219::init()
+{
+  return setCalibration_32V_2A();
+  // return setCalibration_32V_1A();
+  // return setCalibration_16V_400mA();
+}
+
+I2C::Result INA219::getShuntCurrent(float &v)
 {
   updateCalibration();
-  uint16_t v = 0;
-  readReg(REG_SHUNT_CURRENT, v);
-  return static_cast<float>(static_cast<int16_t>(v)) / currentDivider_mA_;
+  uint16_t u = 0;
+  I2C::Result res = readReg(REG_SHUNT_CURRENT, u);
+  v = static_cast<float>(static_cast<int16_t>(u)) / currentDivider_mA_;
+  return res;
 }
-float mik::INA219::getBusVoltage() const
+
+I2C::Result INA219::getBusVoltage(float &v)
 {
-  uint16_t v = 0;
-  readReg(REG_BUS_VOLTAGE, v);
-  int16_t raw = (v >> 3) * 4;
-  return raw * 0.001f;
+  uint16_t u = 0;
+  I2C::Result res = readReg(REG_BUS_VOLTAGE, u);
+  int16_t raw = (u >> 3) * 4;
+  v = raw * 0.001f;
+  return res;
 }
-float mik::INA219::getShuntVoltage() const
+
+I2C::Result INA219::getShuntVoltage(float &v)
 {
-  uint16_t v = 0;
-  readReg(REG_SHUNT_VOLTAGE, v);
-  return static_cast<int16_t>(v) * 0.01f;
+  uint16_t u = 0;
+  I2C::Result res = readReg(REG_SHUNT_VOLTAGE, u);
+  v = static_cast<int16_t>(u) * 0.01f;
+  return res;
 }
